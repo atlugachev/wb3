@@ -1,0 +1,75 @@
+import mpi.*;
+import java.io.*;
+import java.util.*;
+
+public class FileSortMPI {
+    public static void main(String[] args) throws Exception {
+        MPI.Init(args);
+        int rank = MPI.COMM_WORLD.Rank();
+        int size = MPI.COMM_WORLD.Size();
+        
+        // Исходные имена файлов (в реальной программе должны передаваться как аргументы)
+        String[] inputFiles = {"file1.txt", "file2.txt", "file3.txt"};
+        String[] outputFiles = new String[inputFiles.length];
+        
+        // Генерируем имена выходных файлов
+        for (int i = 0; i < inputFiles.length; i++) {
+            outputFiles[i] = inputFiles[i].replace(".txt", "_sorted.txt");
+        }
+        
+        // Распределяем файлы по процессам
+        if (rank == 0) {
+            // Главный процесс распределяет работу
+            for (int i = 1; i < size && i-1 < inputFiles.length; i++) {
+                MPI.COMM_WORLD.Send(new int[]{i-1}, 0, 1, MPI.INT, i, 0);
+            }
+            
+            // Обрабатываем оставшиеся файлы в главном процессе
+            for (int i = size-1; i < inputFiles.length; i++) {
+                processFile(inputFiles[i], outputFiles[i]);
+            }
+            
+            // Принимаем подтверждения от рабочих процессов
+            for (int i = 1; i < size && i-1 < inputFiles.length; i++) {
+                int[] done = new int[1];
+                MPI.COMM_WORLD.Recv(done, 0, 1, MPI.INT, i, 0);
+            }
+        } else {
+            // Рабочие процессы получают задания
+            if (rank-1 < inputFiles.length) {
+                int[] fileIndex = new int[1];
+                MPI.COMM_WORLD.Recv(fileIndex, 0, 1, MPI.INT, 0, 0);
+                
+                processFile(inputFiles[fileIndex[0]], outputFiles[fileIndex[0]]);
+                
+                // Отправляем подтверждение
+                MPI.COMM_WORLD.Send(new int[]{1}, 0, 1, MPI.INT, 0, 0);
+            }
+        }
+        
+        MPI.Finalize();
+    }
+    
+    private static void processFile(String inputFile, String outputFile) throws IOException {
+        // Чтение чисел из файла
+        List<Double> numbers = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(inputFile))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                numbers.add(Double.parseDouble(line.trim()));
+            }
+        }
+        
+        // Сортировка чисел
+        Collections.sort(numbers);
+        
+        // Запись отсортированных чисел в новый файл
+        try (PrintWriter writer = new PrintWriter(new FileWriter(outputFile))) {
+            for (Double num : numbers) {
+                writer.println(num);
+            }
+        }
+        
+        System.out.println("Processed file: " + inputFile + " -> " + outputFile);
+    }
+}
